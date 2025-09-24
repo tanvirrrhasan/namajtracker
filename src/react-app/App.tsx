@@ -10,9 +10,11 @@ import AuthCallbackPage from "@/react-app/pages/AuthCallback";
 import Layout from "@/react-app/components/Layout";
 
 export default function App() {
+  const isGitHubPages = typeof window !== 'undefined' && /\.github\.io$/i.test(window.location.hostname);
+  const basename = isGitHubPages ? '/siratulsabiqun' : '/';
   return (
     <FirebaseAuthProvider>
-      <Router>
+      <Router basename={basename}>
         <Routes>
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route path="/" element={<Layout />}>
