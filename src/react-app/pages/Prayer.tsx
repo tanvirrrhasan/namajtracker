@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useFirebaseAuth } from "@/react-app/context/FirebaseAuthContext";
 import { Check, X, Sun, Sunrise, Sunset, Moon, Clock, Lock } from "lucide-react";
 import { db } from "@/react-app/lib/firebase";
-import { collection, getDocs, addDoc, updateDoc, doc, query, where, orderBy } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, doc, query, where } from "firebase/firestore";
 
 interface Member {
   id: string;
@@ -11,6 +11,8 @@ interface Member {
   is_admin?: boolean;
   is_active?: boolean;
 }
+
+type PrayerKey = 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha';
 
 interface PrayerRecord {
   id: string;
@@ -36,7 +38,7 @@ interface PrayerRecord {
   isha_updated: boolean;
 }
 
-const prayerTimes = [
+const prayerTimes: Array<{ key: PrayerKey; name: string; name_en: string; icon: typeof Sun; time: string; color: string }> = [
   { key: 'fajr', name: 'ফজর', name_en: 'Fajr', icon: Sunrise, time: '৫:১৫', color: 'from-blue-600 to-blue-700' },
   { key: 'dhuhr', name: 'যুহর', name_en: 'Dhuhr', icon: Sun, time: '১২:৩০', color: 'from-yellow-600 to-yellow-700' },
   { key: 'asr', name: 'আসর', name_en: 'Asr', icon: Sun, time: '৪:৪৫', color: 'from-orange-600 to-orange-700' },
@@ -116,7 +118,7 @@ export default function PrayerPage() {
     }
   };
 
-  const updatePrayer = async (memberId: string, prayerType: string, completed: boolean) => {
+  const updatePrayer = async (memberId: string, prayerType: PrayerKey, completed: boolean) => {
     if (!user) return;
 
     const updateKey = `${memberId}-${prayerType}`;
@@ -140,7 +142,7 @@ export default function PrayerPage() {
         });
       } else {
         // Create new record
-        const newRecord = {
+        const newRecord: any = {
           member_id: memberId,
           prayer_date: today,
           fajr: false,
@@ -183,25 +185,25 @@ export default function PrayerPage() {
     return prayerRecords.find(record => record.member_id === memberId) || null;
   };
 
-  const isPrayerLocked = (memberId: string, prayerType: string): boolean => {
+  const isPrayerLocked = (memberId: string, prayerType: PrayerKey): boolean => {
     if (!currentMember) return false;
     
     const record = getMemberPrayerRecord(memberId);
     if (!record) return false;
     
     const lockColumn = `${prayerType}_locked` as keyof PrayerRecord;
-    return record[lockColumn] as boolean && currentMember.id !== memberId;
+    return Boolean(record[lockColumn]) && currentMember.id !== memberId;
   };
 
-  const isPrayerSelfLocked = (memberId: string, prayerType: string): boolean => {
+  const isPrayerSelfLocked = (memberId: string, prayerType: PrayerKey): boolean => {
     const record = getMemberPrayerRecord(memberId);
     if (!record) return false;
     
     const lockColumn = `${prayerType}_locked` as keyof PrayerRecord;
-    return record[lockColumn] as boolean;
+    return Boolean(record[lockColumn]);
   };
 
-  const handleSelfPrayerClick = (prayerType: string, completed: boolean) => {
+  const handleSelfPrayerClick = (prayerType: PrayerKey, completed: boolean) => {
     if (!currentMember) return;
     updatePrayer(currentMember.id, prayerType, completed);
   };

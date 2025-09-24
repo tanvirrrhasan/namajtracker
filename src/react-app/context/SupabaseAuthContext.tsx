@@ -27,7 +27,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         u
           ? {
               id: u.id,
-              email: u.email,
+              email: u.email ?? null,
               name: (u.user_metadata as any)?.full_name ?? (u.user_metadata as any)?.name ?? null,
               avatar_url: (u.user_metadata as any)?.avatar_url ?? null,
             }
@@ -43,7 +43,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         u
           ? {
               id: u.id,
-              email: u.email,
+                email: u.email ?? null,
               name: (u.user_metadata as any)?.full_name ?? (u.user_metadata as any)?.name ?? null,
               avatar_url: (u.user_metadata as any)?.avatar_url ?? null,
             }

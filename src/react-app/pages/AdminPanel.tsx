@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useFirebaseAuth } from "@/react-app/context/FirebaseAuthContext";
 import { Shield, Users, Calendar, Activity, Plus, Edit2, Trash2, Eye, Settings, X } from "lucide-react";
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
+import { collection, addDoc, getDocs, updateDoc, doc, query, orderBy } from "firebase/firestore";
 import { db } from "@/react-app/lib/firebase";
 
 // Client-side image compression to keep base64 under Firestore 1MB field limit
@@ -966,7 +966,7 @@ export default function AdminPanel() {
             <form onSubmit={async (e) => {
               e.preventDefault();
               const formData = new FormData(e.target as HTMLFormElement);
-              const fileInput = e.target.querySelector('input[type="file"]') as HTMLInputElement;
+              const fileInput = (e.currentTarget as HTMLFormElement).querySelector('input[type="file"]') as HTMLInputElement;
               const file = fileInput?.files?.[0];
               
               try {

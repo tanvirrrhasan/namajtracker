@@ -186,7 +186,6 @@ app.post("/api/prayers/update", authMiddleware, zValidator('json', PrayerUpdateS
 
     if (!prayerRecord) {
       // Create new record with all prayers initially null/unupdated
-      const isSelf = isSelfUpdate ? 1 : 0;
       await c.env.DB.prepare(
         "INSERT INTO prayer_records (member_id, prayer_date, fajr, dhuhr, asr, maghrib, isha, updated_by_user_id, is_self_updated, fajr_locked, dhuhr_locked, asr_locked, maghrib_locked, isha_locked, fajr_updated, dhuhr_updated, asr_updated, maghrib_updated, isha_updated) VALUES (?, ?, 0, 0, 0, 0, 0, '', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)"
       ).bind(member_id, prayer_date).run();
