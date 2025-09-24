@@ -11,7 +11,13 @@ import {
 import { zValidator } from "@hono/zod-validator";
 import { PrayerUpdateSchema } from "@/shared/types";
 
-const app = new Hono<{ Bindings: Env }>();
+type WorkerEnv = {
+  DB: any;
+  MOCHA_USERS_SERVICE_API_URL: string;
+  MOCHA_USERS_SERVICE_API_KEY: string;
+};
+
+const app = new Hono<{ Bindings: WorkerEnv }>();
 
 // CORS configuration
 app.use("*", cors({
