@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useFirebaseAuth } from "@/react-app/context/FirebaseAuthContext";
-import { Shield, Users, Calendar, Activity, Plus, Edit2, Trash2, Eye, Settings, X, FileText } from "lucide-react";
+import { Shield, Users, Calendar, Activity, Plus, Edit2, Trash2, Eye, EyeOff, Settings, X, FileText } from "lucide-react";
 import { collection, addDoc, getDocs, updateDoc, doc, query, orderBy, where, deleteDoc } from "firebase/firestore";
 import { db } from "@/react-app/lib/firebase";
 
@@ -247,6 +247,9 @@ export default function AdminPanel() {
 
   const addMember = async (memberData: Omit<Member, 'id' | 'created_at' | 'updated_at'>) => {
     try {
+      console.log('addMember called with editingMember:', editingMember);
+      console.log('memberData:', memberData);
+      
       const newMemberData = {
         ...memberData,
         created_at: new Date().toISOString(),
@@ -261,15 +264,27 @@ export default function AdminPanel() {
       });
       
       if (editingMember) {
+        console.log('Updating existing member with ID:', editingMember.id);
         // Update existing member
-        const memberRef = doc(db, 'members', String(editingMember.id));
-        await updateDoc(memberRef, {
+        const updateData = {
           ...memberData,
           updated_at: new Date().toISOString()
+        };
+        
+        // Remove undefined fields
+        Object.keys(updateData).forEach(key => {
+          if (updateData[key as keyof typeof updateData] === undefined) {
+            delete updateData[key as keyof typeof updateData];
+          }
         });
+        
+        console.log('Update data:', updateData);
+        const memberRef = doc(db, 'members', String(editingMember.id));
+        await updateDoc(memberRef, updateData);
         console.log('Member updated with ID: ', editingMember.id);
         setEditingMember(null);
       } else {
+        console.log('Adding new member');
         // Add new member
         const docRef = await addDoc(collection(db, 'members'), newMemberData);
         console.log('Member added with ID: ', docRef.id);
@@ -300,11 +315,20 @@ export default function AdminPanel() {
       
       if (editingEvent) {
         // Update existing event
-        const eventRef = doc(db, 'events', String(editingEvent.id));
-        await updateDoc(eventRef, {
+        const updateData = {
           ...eventData,
           updated_at: new Date().toISOString()
+        };
+        
+        // Remove undefined fields
+        Object.keys(updateData).forEach(key => {
+          if (updateData[key as keyof typeof updateData] === undefined) {
+            delete updateData[key as keyof typeof updateData];
+          }
         });
+        
+        const eventRef = doc(db, 'events', String(editingEvent.id));
+        await updateDoc(eventRef, updateData);
         console.log('Event updated with ID: ', editingEvent.id);
         setEditingEvent(null);
       } else {
@@ -337,11 +361,20 @@ export default function AdminPanel() {
       
       if (editingActivity) {
         // Update existing activity
-        const activityRef = doc(db, 'activities', String(editingActivity.id));
-        await updateDoc(activityRef, {
+        const updateData = {
           ...activityData,
           updated_at: new Date().toISOString()
+        };
+        
+        // Remove undefined fields
+        Object.keys(updateData).forEach(key => {
+          if (updateData[key as keyof typeof updateData] === undefined) {
+            delete updateData[key as keyof typeof updateData];
+          }
         });
+        
+        const activityRef = doc(db, 'activities', String(editingActivity.id));
+        await updateDoc(activityRef, updateData);
         console.log('Activity updated with ID: ', editingActivity.id);
         setEditingActivity(null);
       } else {
@@ -485,11 +518,20 @@ export default function AdminPanel() {
       
       if (editingGallery) {
         // Update existing gallery item
-        const galleryRef = doc(db, 'gallery', String(editingGallery.id));
-        await updateDoc(galleryRef, {
+        const updateData = {
           ...galleryData,
           updated_at: new Date().toISOString()
+        };
+        
+        // Remove undefined fields
+        Object.keys(updateData).forEach(key => {
+          if (updateData[key as keyof typeof updateData] === undefined) {
+            delete updateData[key as keyof typeof updateData];
+          }
         });
+        
+        const galleryRef = doc(db, 'gallery', String(editingGallery.id));
+        await updateDoc(galleryRef, updateData);
         console.log('Gallery item updated with ID: ', editingGallery.id);
         setEditingGallery(null);
       } else {
@@ -647,6 +689,9 @@ export default function AdminPanel() {
                     <div>
                       <h3 className="font-semibold text-emerald-100 flex items-center space-x-2">
                         <span>{member.name}</span>
+                        {(member as any).is_hidden && (
+                          <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-yellow-600/20 text-yellow-200 border border-yellow-600/30">লুকানো</span>
+                        )}
                         {member.is_admin && (
                           <Shield className="w-4 h-4 text-yellow-400" />
                         )}
@@ -658,13 +703,24 @@ export default function AdminPanel() {
                     </div>
                   </div>
                   
-                  <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2">
                     <button 
                       onClick={() => handleEditMember(member)}
                       className="p-2 bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition-colors"
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
+                    <button
+                    onClick={async () => {
+                      try {
+                        await updateDoc(doc(db, 'members', String(member.id)), { is_hidden: !(member as any).is_hidden, updated_at: new Date().toISOString() });
+                        fetchAllData();
+                      } catch (e) { console.error(e); }
+                    }}
+                    className={`p-2 rounded-lg transition-colors ${ (member as any).is_hidden ? 'bg-yellow-600/30 text-yellow-200 hover:bg-yellow-600/40' : 'bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30' }`}
+                  >
+                    {(member as any).is_hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                     
                     <button 
                       onClick={() => handleDeleteMember(String(member.id))}
@@ -796,7 +852,12 @@ export default function AdminPanel() {
               <div key={event.id} className="bg-slate-800/50 rounded-xl p-4 border border-emerald-800/30">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <h3 className="font-semibold text-emerald-100 mb-1">{event.title}</h3>
+                    <h3 className="font-semibold text-emerald-100 mb-1 flex items-center">
+                      <span>{event.title}</span>
+                      {(event as any).is_hidden && (
+                        <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-yellow-600/20 text-yellow-200 border border-yellow-600/30">লুকানো</span>
+                      )}
+                    </h3>
                     <p className="text-sm text-emerald-200/70 mb-2">{event.description}</p>
                     <div className="flex items-center space-x-4 text-xs text-emerald-300">
                       <span>📅 {new Date(event.event_date).toLocaleDateString('bn-BD')}</span>
@@ -811,6 +872,17 @@ export default function AdminPanel() {
                       className="p-2 bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition-colors"
                     >
                       <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await updateDoc(doc(db, 'events', String(event.id)), { is_hidden: !(event as any).is_hidden, updated_at: new Date().toISOString() });
+                          fetchAllData();
+                        } catch (e) { console.error(e); }
+                      }}
+                      className={`p-2 rounded-lg transition-colors ${ (event as any).is_hidden ? 'bg-yellow-600/30 text-yellow-200 hover:bg-yellow-600/40' : 'bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30' }`}
+                    >
+                      {(event as any).is_hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                     <button 
                       onClick={() => handleDeleteEvent(String(event.id))}
@@ -857,7 +929,12 @@ export default function AdminPanel() {
               <div key={activity.id} className="bg-slate-800/50 rounded-xl p-4 border border-emerald-800/30">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <h3 className="font-semibold text-emerald-100 mb-1">{activity.title}</h3>
+                    <h3 className="font-semibold text-emerald-100 mb-1 flex items-center">
+                      <span>{activity.title}</span>
+                      {(activity as any).is_hidden && (
+                        <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-yellow-600/20 text-yellow-200 border border-yellow-600/30">লুকানো</span>
+                      )}
+                    </h3>
                     <p className="text-sm text-emerald-200/70 mb-2">{activity.description}</p>
                     <div className="flex items-center space-x-4 text-xs text-emerald-300">
                       <span>📋 {activity.activity_type}</span>
@@ -883,6 +960,17 @@ export default function AdminPanel() {
                       className="p-2 bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition-colors"
                     >
                       <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await updateDoc(doc(db, 'activities', String(activity.id)), { is_hidden: !(activity as any).is_hidden, updated_at: new Date().toISOString() });
+                          fetchAllData();
+                        } catch (e) { console.error(e); }
+                      }}
+                      className={`p-2 rounded-lg transition-colors ${ (activity as any).is_hidden ? 'bg-yellow-600/30 text-yellow-200 hover:bg-yellow-600/40' : 'bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30' }`}
+                    >
+                      {(activity as any).is_hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                     <button 
                       onClick={() => handleDeleteActivity(String(activity.id))}
@@ -922,9 +1010,14 @@ export default function AdminPanel() {
                   />
                 </div>
                 <div className="space-y-2">
-                  {item.title && (
-                    <h3 className="font-semibold text-emerald-100">{item.title}</h3>
-                  )}
+                    {item.title && (
+                      <h3 className="font-semibold text-emerald-100 flex items-center">
+                        <span>{item.title}</span>
+                        {(item as any).is_hidden && (
+                          <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-yellow-600/20 text-yellow-200 border border-yellow-600/30">লুকানো</span>
+                        )}
+                      </h3>
+                    )}
                   {item.description && (
                     <p className="text-sm text-emerald-200/70">{item.description}</p>
                   )}
@@ -942,6 +1035,17 @@ export default function AdminPanel() {
                         className="p-2 bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition-colors"
                       >
                         <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            await updateDoc(doc(db, 'gallery', String(item.id)), { is_hidden: !(item as any).is_hidden, updated_at: new Date().toISOString() });
+                            fetchAllData();
+                          } catch (e) { console.error(e); }
+                        }}
+                        className={`p-2 rounded-lg transition-colors ${ (item as any).is_hidden ? 'bg-yellow-600/30 text-yellow-200 hover:bg-yellow-600/40' : 'bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30' }`}
+                      >
+                        {(item as any).is_hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                       <button 
                         onClick={() => handleDeleteGallery(String(item.id))}
@@ -992,7 +1096,7 @@ export default function AdminPanel() {
               e.preventDefault();
               const formData = new FormData(e.target as HTMLFormElement);
               addMember({
-                user_id: formData.get('email') as string,
+                user_id: editingMember?.user_id || '',
                 name: formData.get('name') as string,
                 email: formData.get('email') as string,
                 temp_password: formData.get('temp_password') as string || undefined,
@@ -1000,7 +1104,7 @@ export default function AdminPanel() {
                 address: formData.get('address') as string || undefined,
                 is_admin: formData.get('is_admin') === 'true',
                 is_active: formData.get('is_active') === 'true',
-                joined_date: new Date().toISOString().split('T')[0]
+                joined_date: editingMember?.joined_date || new Date().toISOString().split('T')[0]
               });
             }} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1377,18 +1481,35 @@ export default function AdminPanel() {
               const file = fileInput?.files?.[0];
               
               try {
-                if (!file) return;
-                const base64String = await compressImageToBase64(file, {
-                  maxWidth: 1600,
-                  maxHeight: 1600,
-                  quality: 0.8,
-                  maxBytes: 900_000,
-                  mimeType: 'image/jpeg'
-                });
+                let imageUrl = editingGallery?.image_url; // Keep existing image by default
+                
+                // Only process new image if a file is selected
+                if (file) {
+                  const base64String = await compressImageToBase64(file, {
+                    maxWidth: 1600,
+                    maxHeight: 1600,
+                    quality: 0.8,
+                    maxBytes: 900_000,
+                    mimeType: 'image/jpeg'
+                  });
+                  imageUrl = base64String;
+                }
+                
+                // If editing and no new file selected, use existing image
+                if (editingGallery && !file) {
+                  imageUrl = editingGallery.image_url;
+                }
+                
+                // If adding new item and no file selected, show error
+                if (!editingGallery && !file) {
+                  alert('নতুন ছবি যোগ করতে একটি ছবি নির্বাচন করুন।');
+                  return;
+                }
+                
                 await addGalleryItem({
                   title: formData.get('title') as string || undefined,
                   description: formData.get('description') as string || undefined,
-                  image_url: base64String,
+                  image_url: imageUrl,
                   media_type: 'image',
                   event_id: formData.get('event_id') as string || undefined,
                   is_featured: formData.get('is_featured') === 'true'
@@ -1399,13 +1520,35 @@ export default function AdminPanel() {
               }
             }} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-emerald-200 mb-2">ছবি নির্বাচন করুন</label>
+                <label className="block text-sm font-medium text-emerald-200 mb-2">
+                  {editingGallery ? 'নতুন ছবি নির্বাচন করুন (ঐচ্ছিক)' : 'ছবি নির্বাচন করুন'}
+                </label>
+                
+                {/* Show existing image when editing */}
+                {editingGallery && (
+                  <div className="mb-3">
+                    <p className="text-sm text-emerald-200/70 mb-2">বর্তমান ছবি:</p>
+                    <div className="w-32 h-32 rounded-lg overflow-hidden border border-emerald-600/30">
+                      <img
+                        src={editingGallery.image_url}
+                        alt="Current image"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  </div>
+                )}
+                
                 <input
                   type="file"
                   accept="image/*"
-                  required
+                  required={!editingGallery}
                   className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                 />
+                {editingGallery && (
+                  <p className="text-xs text-emerald-200/60 mt-1">
+                    নতুন ছবি নির্বাচন না করলে বর্তমান ছবি রাখা হবে
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-emerald-200 mb-2">শিরোনাম</label>

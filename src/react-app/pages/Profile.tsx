@@ -38,28 +38,32 @@ export default function ProfilePage() {
       if (!user) return;
       
       const membersCol = collection(db, "members");
-      const memberQuery = query(membersCol, where("user_id", "==", user.id));
-      const snapshot = await getDocs(memberQuery);
+      // Primary: lookup by user_id
+      let snapshot = await getDocs(query(membersCol, where("user_id", "==", user.id)));
       
+      // Fallback: if missing user_id in DB, try by email
+      if (snapshot.empty && user.email) {
+        snapshot = await getDocs(query(membersCol, where("email", "==", user.email)));
+      }
+
       if (snapshot.empty) {
-        // Member should exist - if not, show error
         console.error("Member profile not found for user:", user.id);
         setProfile(null);
         setLoading(false);
         return;
-      } else {
-        const memberDoc = snapshot.docs[0];
-        const memberData = {
-          id: memberDoc.id,
-          ...memberDoc.data()
-        } as MemberProfile;
-        
-        setProfile(memberData);
-        setFormData({
-          phone: memberData.phone || '',
-          address: memberData.address || '',
-        });
       }
+
+      const memberDoc = snapshot.docs[0];
+      const memberData = {
+        id: memberDoc.id,
+        ...memberDoc.data()
+      } as MemberProfile;
+
+      setProfile(memberData);
+      setFormData({
+        phone: memberData.phone || '',
+        address: memberData.address || '',
+      });
     } catch (error) {
       console.error("Failed to fetch profile:", error);
     } finally {

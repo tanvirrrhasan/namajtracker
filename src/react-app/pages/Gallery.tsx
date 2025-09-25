@@ -13,6 +13,7 @@ interface GalleryItem {
   uploaded_by_user_id: string;
   is_featured: boolean;
   created_at: string;
+  is_hidden?: boolean;
 }
 
 export default function Gallery() {
@@ -40,9 +41,10 @@ export default function Gallery() {
     }
   };
 
+  const visibleItems = galleryItems.filter(item => !item.is_hidden);
   const filteredItems = filter === 'featured' 
-    ? galleryItems.filter(item => item.is_featured)
-    : galleryItems;
+    ? visibleItems.filter(item => item.is_featured)
+    : visibleItems;
 
   if (loading) {
     return (

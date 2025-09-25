@@ -12,6 +12,7 @@ interface ActivityType {
   scheduled_date?: string;
   status: 'planned' | 'in_progress' | 'completed';
   created_at: string;
+  is_hidden?: boolean;
 }
 
 const activityTypeMap: Record<string, { name: string, name_en: string, icon: string, color: string }> = {
@@ -59,6 +60,7 @@ export default function ActivitiesPage() {
   };
 
   const filteredActivities = activities.filter(activity => {
+    if (activity.is_hidden) return false;
     if (filter === 'all') return true;
     return activity.status === filter;
   });
@@ -131,19 +133,19 @@ export default function ActivitiesPage() {
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-slate-800/50 rounded-xl p-4 border border-emerald-800/30 text-center">
           <div className="text-2xl font-bold text-emerald-300">
-            {activities.filter(a => a.status === 'planned').length}
+            {activities.filter(a => !a.is_hidden && a.status === 'planned').length}
           </div>
           <div className="text-sm text-emerald-200/70">পরিকল্পিত</div>
         </div>
         <div className="bg-slate-800/50 rounded-xl p-4 border border-emerald-800/30 text-center">
           <div className="text-2xl font-bold text-yellow-300">
-            {activities.filter(a => a.status === 'in_progress').length}
+            {activities.filter(a => !a.is_hidden && a.status === 'in_progress').length}
           </div>
           <div className="text-sm text-emerald-200/70">চলমান</div>
         </div>
         <div className="bg-slate-800/50 rounded-xl p-4 border border-emerald-800/30 text-center">
           <div className="text-2xl font-bold text-green-300">
-            {activities.filter(a => a.status === 'completed').length}
+            {activities.filter(a => !a.is_hidden && a.status === 'completed').length}
           </div>
           <div className="text-sm text-emerald-200/70">সম্পন্ন</div>
         </div>
@@ -220,12 +222,7 @@ export default function ActivitiesPage() {
         )}
       </div>
 
-      {/* Add Activity Button (Placeholder) */}
-      <div className="fixed bottom-24 right-4">
-        <button className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 w-14 h-14 rounded-full shadow-xl shadow-emerald-800/30 flex items-center justify-center transition-all duration-200">
-          <span className="text-2xl text-white">+</span>
-        </button>
-      </div>
+      {/* Add Activity Button removed */}
     </div>
   );
 }

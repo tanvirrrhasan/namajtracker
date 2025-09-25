@@ -13,6 +13,7 @@ interface SidePanelProps {
 export default function SidePanel({ isOpen, onClose }: SidePanelProps) {
   const { user, signOut } = useFirebaseAuth();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [memberDisplayName, setMemberDisplayName] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -24,13 +25,13 @@ export default function SidePanel({ isOpen, onClose }: SidePanelProps) {
   const checkAdminStatus = async () => {
     if (!user) {
       setIsAdmin(false);
+      setMemberDisplayName(null);
       return;
     }
 
     // Temporary solution: Check if user email is admin email
     if (user.email === 'vaitanvir833@gmail.com') {
       setIsAdmin(true);
-      return;
     }
 
     try {
@@ -39,15 +40,21 @@ export default function SidePanel({ isOpen, onClose }: SidePanelProps) {
       const snaps: any[] = [];
       const q1 = await getDocs(query(membersCol, where('user_id', '==', user.id)));
       snaps.push(...q1.docs);
-      if (user.email) {
+      if (snaps.length === 0 && user.email) {
         const q2 = await getDocs(query(membersCol, where('email', '==', user.email)));
         snaps.push(...q2.docs);
       }
       const member = snaps[0]?.data() as any | undefined;
-      setIsAdmin(Boolean(member?.is_admin));
+      if (member) {
+        setIsAdmin(Boolean(member?.is_admin));
+        setMemberDisplayName(member?.name || null);
+      } else {
+        setMemberDisplayName(null);
+      }
     } catch (error) {
       console.error("Failed to check admin status:", error);
       setIsAdmin(false);
+      setMemberDisplayName(null);
     }
   };
 
@@ -91,7 +98,8 @@ export default function SidePanel({ isOpen, onClose }: SidePanelProps) {
       }`}>
         <div className="h-full flex flex-col">
           <div className="p-4 flex-shrink-0">
-          <div className="flex items-center justify-end mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="text-base font-semibold text-emerald-100">মেনু</div>
             <button
               onClick={onClose}
               className="p-2 rounded-lg hover:bg-emerald-800/20 transition-colors"
@@ -113,7 +121,7 @@ export default function SidePanel({ isOpen, onClose }: SidePanelProps) {
                 )}
                 <div>
                   <p className="font-medium text-emerald-100">
-                    {user.name || user.email}
+                    {memberDisplayName || user.name || user.email}
                   </p>
                   <p className="text-sm text-emerald-200/70">{user.email}</p>
                 </div>

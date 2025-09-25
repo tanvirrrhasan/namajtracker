@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useFirebaseAuth } from "@/react-app/context/FirebaseAuthContext";
 import { Check, X, Sun, Sunrise, Sunset, Moon, Clock, Lock, ChevronLeft, ChevronRight } from "lucide-react";
 import { db } from "@/react-app/lib/firebase";
-import { collection, getDocs, addDoc, updateDoc, doc, query, where } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, doc, query, where, onSnapshot } from "firebase/firestore";
 
 interface Member {
   id: string;
@@ -58,9 +58,41 @@ export default function PrayerPage() {
   const today = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
-    if (user) {
-      fetchData();
-    }
+    if (!user) return;
+
+    // Real-time members subscription
+    const membersUnsub = onSnapshot(collection(db, "members"), async (snapshot) => {
+      const allMembers: Member[] = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      setMembers(allMembers);
+
+      // Maintain/derive currentMember whenever members change
+      let userMember = allMembers.find((m) => m.user_id === user.id) || null;
+      if (!userMember && user.email) {
+        const emailDoc = snapshot.docs.find(d => (d.data() as any)?.email === user.email);
+        if (emailDoc) {
+          // Link it silently
+          const memberRef = doc(db, "members", emailDoc.id);
+          await updateDoc(memberRef, { user_id: user.id, updated_at: new Date().toISOString() });
+          userMember = { id: emailDoc.id, ...(emailDoc.data() as any), user_id: user.id } as Member;
+        }
+      }
+      setCurrentMember(userMember);
+    });
+
+    // Real-time prayer records subscription for selectedDate
+    const prayersQuery = query(collection(db, "prayer_records"), where("prayer_date", "==", selectedDate));
+    const prayersUnsub = onSnapshot(prayersQuery, (snapshot) => {
+      const records: PrayerRecord[] = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      setPrayerRecords(records);
+    });
+
+    // Initial fetch to link/create member if needed
+    fetchData();
+
+    return () => {
+      membersUnsub();
+      prayersUnsub();
+    };
   }, [user, selectedDate]);
 
   const fetchData = async () => {
@@ -77,8 +109,30 @@ export default function PrayerPage() {
       
       // Find current user's member record
       let userMember = allMembers.find((member: Member) => member.user_id === user?.id);
-      
-      // If user doesn't have a member record, create one
+
+      // If no record by user_id, try fallback by email to avoid duplicates
+      if (!userMember && user?.email) {
+        const emailMatch = (membersSnapshot.docs.find(d => (d.data() as any)?.email === user.email));
+        if (emailMatch) {
+          // Link this existing member to the Firebase user id
+          const memberId = emailMatch.id;
+          const memberRef = doc(db, "members", memberId);
+          await updateDoc(memberRef, {
+            user_id: user.id,
+            updated_at: new Date().toISOString()
+          });
+          const linked = {
+            id: memberId,
+            ...(emailMatch.data() as any),
+            user_id: user.id
+          } as Member;
+          userMember = linked;
+          // Reflect linkage locally
+          setMembers(prev => prev.map(m => m.id === memberId ? linked : m));
+        }
+      }
+
+      // If still not found, create a brand new member (first-time user)
       if (!userMember && user) {
         const newMemberData = {
           name: user.name || user.email || "নাম নেই",
@@ -86,16 +140,11 @@ export default function PrayerPage() {
           email: user.email,
           is_admin: false,
           is_active: true,
-          created_at: new Date().toISOString()
-        };
-        
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        } as any;
         const docRef = await addDoc(collection(db, "members"), newMemberData);
-        userMember = {
-          id: docRef.id,
-          ...newMemberData
-        };
-        
-        // Add to members list
+        userMember = { id: docRef.id, ...newMemberData } as Member;
         setMembers(prev => [...prev, userMember!]);
       }
       
@@ -123,6 +172,35 @@ export default function PrayerPage() {
 
     const updateKey = `${memberId}-${prayerType}`;
     setUpdating(updateKey);
+
+    // Optimistic UI: update local state immediately
+    setPrayerRecords(prev => {
+      const existing = prev.find(r => r.member_id === memberId && r.prayer_date === selectedDate);
+      if (existing) {
+        const updated = prev.map(r => r.id === existing.id ? {
+          ...r,
+          [prayerType]: completed,
+          [`${prayerType}_updated`]: true,
+          // Keep existing lock flags; UI will compute lock visuals as before
+        } as any : r);
+        return updated;
+      } else {
+        const newRecord: any = {
+          id: `optimistic-${memberId}-${selectedDate}`,
+          member_id: memberId,
+          member_name: members.find(m => m.id === memberId)?.name || 'Unknown',
+          prayer_date: selectedDate,
+          fajr: false, dhuhr: false, asr: false, maghrib: false, isha: false,
+          fajr_updated: false, dhuhr_updated: false, asr_updated: false, maghrib_updated: false, isha_updated: false,
+          fajr_locked: false, dhuhr_locked: false, asr_locked: false, maghrib_locked: false, isha_locked: false,
+          updated_by_user_id: user.id,
+          is_self_updated: currentMember?.id === memberId,
+        };
+        newRecord[prayerType] = completed;
+        newRecord[`${prayerType}_updated`] = true;
+        return [...prev, newRecord];
+      }
+    });
 
     try {
       // Find existing prayer record for selected date
@@ -195,7 +273,7 @@ export default function PrayerPage() {
         await addDoc(collection(db, "prayer_records"), newRecord);
       }
 
-      await fetchData(); // Refresh data
+      // No manual refetch; onSnapshot will sync real state back
     } catch (error) {
       console.error("Failed to update prayer:", error);
       alert("নেটওয়ার্ক এরর হয়েছে");
@@ -299,8 +377,11 @@ export default function PrayerPage() {
     );
   }
 
-  // Filter out current user from other members list
-  const otherMembers = members.filter(member => member.id !== currentMember?.id);
+  // Filter out current user and hidden members, then sort A→Z by name
+  const otherMembers = members
+    .filter(member => member.id !== currentMember?.id)
+    .filter(member => !(member as any).is_hidden)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
 
   return (
     <div className="p-4 space-y-6">
