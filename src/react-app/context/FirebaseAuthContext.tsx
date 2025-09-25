@@ -59,7 +59,7 @@ export function FirebaseAuthProvider({ children }: { children: ReactNode }) {
       }
       
       const memberDoc = snap.docs[0];
-      const memberData = memberDoc.data() as any;
+      // const memberData = memberDoc.data() as any;
       
       // Always update member record with current Firebase UID (handles both new and existing logins)
       await updateDoc(doc(db, "members", memberDoc.id), { 

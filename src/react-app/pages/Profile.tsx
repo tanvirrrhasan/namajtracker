@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useFirebaseAuth } from "@/react-app/context/FirebaseAuthContext";
-import { User, Mail, Phone, MapPin, Calendar, Settings, LogOut, Shield, FileText, Send, CheckCircle, X } from "lucide-react";
+import { User, Mail, Phone, MapPin, Calendar, Settings, LogOut, Shield, Send, CheckCircle, X } from "lucide-react";
 import { db } from "@/react-app/lib/firebase";
 import { collection, getDocs, query, where, addDoc } from "firebase/firestore";
 

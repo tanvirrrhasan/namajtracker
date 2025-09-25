@@ -262,7 +262,7 @@ export default function AdminPanel() {
       
       if (editingMember) {
         // Update existing member
-        const memberRef = doc(db, 'members', editingMember.id);
+        const memberRef = doc(db, 'members', String(editingMember.id));
         await updateDoc(memberRef, {
           ...memberData,
           updated_at: new Date().toISOString()
@@ -300,7 +300,7 @@ export default function AdminPanel() {
       
       if (editingEvent) {
         // Update existing event
-        const eventRef = doc(db, 'events', editingEvent.id);
+        const eventRef = doc(db, 'events', String(editingEvent.id));
         await updateDoc(eventRef, {
           ...eventData,
           updated_at: new Date().toISOString()
@@ -337,7 +337,7 @@ export default function AdminPanel() {
       
       if (editingActivity) {
         // Update existing activity
-        const activityRef = doc(db, 'activities', editingActivity.id);
+        const activityRef = doc(db, 'activities', String(editingActivity.id));
         await updateDoc(activityRef, {
           ...activityData,
           updated_at: new Date().toISOString()
@@ -485,7 +485,7 @@ export default function AdminPanel() {
       
       if (editingGallery) {
         // Update existing gallery item
-        const galleryRef = doc(db, 'gallery', editingGallery.id);
+        const galleryRef = doc(db, 'gallery', String(editingGallery.id));
         await updateDoc(galleryRef, {
           ...galleryData,
           updated_at: new Date().toISOString()
@@ -667,7 +667,7 @@ export default function AdminPanel() {
                     </button>
                     
                     <button 
-                      onClick={() => handleDeleteMember(member.id)}
+                      onClick={() => handleDeleteMember(String(member.id))}
                       className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -813,7 +813,7 @@ export default function AdminPanel() {
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button 
-                      onClick={() => handleDeleteEvent(event.id)}
+                      onClick={() => handleDeleteEvent(String(event.id))}
                       className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -885,7 +885,7 @@ export default function AdminPanel() {
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button 
-                      onClick={() => handleDeleteActivity(activity.id)}
+                      onClick={() => handleDeleteActivity(String(activity.id))}
                       className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -944,7 +944,7 @@ export default function AdminPanel() {
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button 
-                        onClick={() => handleDeleteGallery(item.id)}
+                        onClick={() => handleDeleteGallery(String(item.id))}
                         className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />

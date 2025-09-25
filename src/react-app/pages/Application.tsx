@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { User, Mail, Phone, MapPin, FileText, Send, CheckCircle } from "lucide-react";
+import { User, FileText, Send, CheckCircle } from "lucide-react";
 import { db } from "@/react-app/lib/firebase";
 import { collection, addDoc } from "firebase/firestore";
 
