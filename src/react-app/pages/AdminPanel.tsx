@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useFirebaseAuth } from "@/react-app/context/FirebaseAuthContext";
-import { Shield, Users, Calendar, Activity, Plus, Edit2, Trash2, Eye, Settings, X } from "lucide-react";
-import { collection, addDoc, getDocs, updateDoc, doc, query, orderBy } from "firebase/firestore";
+import { Shield, Users, Calendar, Activity, Plus, Edit2, Trash2, Eye, Settings, X, FileText } from "lucide-react";
+import { collection, addDoc, getDocs, updateDoc, doc, query, orderBy, where, deleteDoc } from "firebase/firestore";
 import { db } from "@/react-app/lib/firebase";
 
 // Client-side image compression to keep base64 under Firestore 1MB field limit
@@ -54,6 +54,7 @@ interface Member {
   user_id: string;
   name: string;
   email: string;
+  temp_password?: string | null;
   phone?: string;
   address?: string;
   is_admin: boolean;
@@ -97,25 +98,62 @@ interface GalleryItem {
   created_at: string;
 }
 
+interface Application {
+  id: string | number;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  reason: string;
+  experience: string;
+  status: 'pending' | 'approved' | 'rejected';
+  applied_at: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+}
+
 export default function AdminPanel() {
   const { user } = useFirebaseAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'events' | 'activities' | 'gallery'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'events' | 'activities' | 'gallery' | 'applications'>('overview');
   const [members, setMembers] = useState<Member[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [activities, setActivities] = useState<ActivityType[]>([]);
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAddMemberForm, setShowAddMemberForm] = useState(false);
   const [showAddEventForm, setShowAddEventForm] = useState(false);
   const [showAddActivityForm, setShowAddActivityForm] = useState(false);
   const [showAddGalleryForm, setShowAddGalleryForm] = useState(false);
+  
+  // Editing states
+  const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [editingActivity, setEditingActivity] = useState<ActivityType | null>(null);
+  const [editingGallery, setEditingGallery] = useState<GalleryItem | null>(null);
 
   useEffect(() => {
     if (user) {
       checkAdminStatus();
     }
   }, [user]);
+
+  // Disable body scroll when any modal is open
+  useEffect(() => {
+    const isModalOpen = showAddMemberForm || showAddEventForm || showAddActivityForm || showAddGalleryForm;
+    
+    if (isModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+
+    // Cleanup function to restore scroll when component unmounts
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [showAddMemberForm, showAddEventForm, showAddActivityForm, showAddGalleryForm]);
 
   const checkAdminStatus = async () => {
     if (!user) {
@@ -124,18 +162,21 @@ export default function AdminPanel() {
       return;
     }
 
-    // Temporary solution: Check if user email is admin email
-    if (user.email === 'vaitanvir833@gmail.com') {
+    // Prefer Firestore client-side admin check in dev and prod
+    const isSuperAdmin = user.email === 'vaitanvir833@gmail.com';
+    if (isSuperAdmin) {
       setIsAdmin(true);
       fetchAllData();
       return;
     }
 
     try {
-      const response = await fetch("/api/members/profile");
-      const data = await response.json();
-      
-      if (data.success && data.data.is_admin) {
+      // Match either user_id or email in case one is not set yet
+      const q1 = await getDocs(query(collection(db, 'members'), where('user_id', '==', user.id)));
+      const q2 = user.email ? await getDocs(query(collection(db, 'members'), where('email', '==', user.email))) : undefined;
+      const docSnap = (q1.docs[0] || q2?.docs[0]);
+      const member = docSnap?.data() as any | undefined;
+      if (member?.is_admin) {
         setIsAdmin(true);
         fetchAllData();
       } else {
@@ -186,6 +227,15 @@ export default function AdminPanel() {
       })) as GalleryItem[];
       setGalleryItems(galleryData);
 
+      // Fetch applications from Firebase
+      const applicationsQuery = query(collection(db, 'applications'), orderBy('applied_at', 'desc'));
+      const applicationsSnapshot = await getDocs(applicationsQuery);
+      const applicationsData = applicationsSnapshot.docs.map((doc, index) => ({
+        id: doc.id || `application_${index}`, // Use doc.id as string or fallback
+        ...doc.data()
+      })) as Application[];
+      setApplications(applicationsData);
+
     } catch (error) {
       console.error("Failed to fetch admin data:", error);
     } finally {
@@ -193,33 +243,7 @@ export default function AdminPanel() {
     }
   };
 
-  const toggleMemberAdmin = async (memberId: string | number, isCurrentlyAdmin: boolean) => {
-    try {
-      const memberRef = doc(db, 'members', memberId.toString());
-      await updateDoc(memberRef, {
-        is_admin: !isCurrentlyAdmin,
-        updated_at: new Date().toISOString()
-      });
-      fetchAllData(); // Refresh data
-      console.log(`Admin status toggled for member ${memberId}`);
-    } catch (error) {
-      console.error("Failed to toggle admin status:", error);
-    }
-  };
 
-  const toggleMemberActive = async (memberId: string | number, isCurrentlyActive: boolean) => {
-    try {
-      const memberRef = doc(db, 'members', memberId.toString());
-      await updateDoc(memberRef, {
-        is_active: !isCurrentlyActive,
-        updated_at: new Date().toISOString()
-      });
-      fetchAllData(); // Refresh data
-      console.log(`Active status toggled for member ${memberId}`);
-    } catch (error) {
-      console.error("Failed to toggle active status:", error);
-    }
-  };
 
   const addMember = async (memberData: Omit<Member, 'id' | 'created_at' | 'updated_at'>) => {
     try {
@@ -236,12 +260,25 @@ export default function AdminPanel() {
         }
       });
       
-      const docRef = await addDoc(collection(db, 'members'), newMemberData);
-      console.log('Member added with ID: ', docRef.id);
+      if (editingMember) {
+        // Update existing member
+        const memberRef = doc(db, 'members', editingMember.id);
+        await updateDoc(memberRef, {
+          ...memberData,
+          updated_at: new Date().toISOString()
+        });
+        console.log('Member updated with ID: ', editingMember.id);
+        setEditingMember(null);
+      } else {
+        // Add new member
+        const docRef = await addDoc(collection(db, 'members'), newMemberData);
+        console.log('Member added with ID: ', docRef.id);
+      }
+      
       fetchAllData(); // Refresh data
       setShowAddMemberForm(false);
     } catch (error) {
-      console.error('Error adding member: ', error);
+      console.error('Error adding/updating member: ', error);
     }
   };
 
@@ -261,12 +298,25 @@ export default function AdminPanel() {
         }
       });
       
-      const docRef = await addDoc(collection(db, 'events'), newEventData);
-      console.log('Event added with ID: ', docRef.id);
+      if (editingEvent) {
+        // Update existing event
+        const eventRef = doc(db, 'events', editingEvent.id);
+        await updateDoc(eventRef, {
+          ...eventData,
+          updated_at: new Date().toISOString()
+        });
+        console.log('Event updated with ID: ', editingEvent.id);
+        setEditingEvent(null);
+      } else {
+        // Add new event
+        const docRef = await addDoc(collection(db, 'events'), newEventData);
+        console.log('Event added with ID: ', docRef.id);
+      }
+      
       fetchAllData(); // Refresh data
       setShowAddEventForm(false);
     } catch (error) {
-      console.error('Error adding event: ', error);
+      console.error('Error adding/updating event: ', error);
     }
   };
 
@@ -285,13 +335,137 @@ export default function AdminPanel() {
         }
       });
       
-      const docRef = await addDoc(collection(db, 'activities'), newActivityData);
-      console.log('Activity added with ID: ', docRef.id);
+      if (editingActivity) {
+        // Update existing activity
+        const activityRef = doc(db, 'activities', editingActivity.id);
+        await updateDoc(activityRef, {
+          ...activityData,
+          updated_at: new Date().toISOString()
+        });
+        console.log('Activity updated with ID: ', editingActivity.id);
+        setEditingActivity(null);
+      } else {
+        // Add new activity
+        const docRef = await addDoc(collection(db, 'activities'), newActivityData);
+        console.log('Activity added with ID: ', docRef.id);
+      }
+      
       fetchAllData(); // Refresh data
       setShowAddActivityForm(false);
     } catch (error) {
-      console.error('Error adding activity: ', error);
+      console.error('Error adding/updating activity: ', error);
     }
+  };
+
+  const handleApplicationStatus = async (applicationId: string | number, status: 'approved' | 'rejected') => {
+    try {
+      const applicationRef = doc(db, 'applications', applicationId.toString());
+      await updateDoc(applicationRef, {
+        status: status,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: user?.email || 'unknown'
+      });
+      
+      // If approved, create member record
+      if (status === 'approved') {
+        const application = applications.find(app => app.id === applicationId);
+        if (application) {
+          const newMemberData = {
+            user_id: '', // Will be set when user logs in
+            name: application.name,
+            email: application.email,
+            phone: application.phone,
+            address: application.address,
+            is_admin: false,
+            is_active: true,
+            joined_date: new Date().toISOString().split('T')[0],
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          
+          await addDoc(collection(db, 'members'), newMemberData);
+        }
+      }
+      
+      fetchAllData(); // Refresh data
+      console.log(`Application ${applicationId} ${status}`);
+    } catch (error) {
+      console.error(`Failed to ${status} application:`, error);
+    }
+  };
+
+  // Delete functions
+  const handleDeleteMember = async (memberId: string) => {
+    if (!confirm('আপনি কি এই সদস্যকে মুছে ফেলতে চান?')) return;
+    
+    try {
+      await deleteDoc(doc(db, 'members', memberId));
+      fetchAllData();
+      console.log('Member deleted successfully');
+    } catch (error) {
+      console.error('Failed to delete member:', error);
+      alert('সদস্য মুছে ফেলতে ব্যর্থ হয়েছে');
+    }
+  };
+
+  const handleDeleteEvent = async (eventId: string) => {
+    if (!confirm('আপনি কি এই ইভেন্টটি মুছে ফেলতে চান?')) return;
+    
+    try {
+      await deleteDoc(doc(db, 'events', eventId));
+      fetchAllData();
+      console.log('Event deleted successfully');
+    } catch (error) {
+      console.error('Failed to delete event:', error);
+      alert('ইভেন্ট মুছে ফেলতে ব্যর্থ হয়েছে');
+    }
+  };
+
+  const handleDeleteActivity = async (activityId: string) => {
+    if (!confirm('আপনি কি এই কার্যক্রমটি মুছে ফেলতে চান?')) return;
+    
+    try {
+      await deleteDoc(doc(db, 'activities', activityId));
+      fetchAllData();
+      console.log('Activity deleted successfully');
+    } catch (error) {
+      console.error('Failed to delete activity:', error);
+      alert('কার্যক্রম মুছে ফেলতে ব্যর্থ হয়েছে');
+    }
+  };
+
+  const handleDeleteGallery = async (galleryId: string) => {
+    if (!confirm('আপনি কি এই গ্যালারি আইটেমটি মুছে ফেলতে চান?')) return;
+    
+    try {
+      await deleteDoc(doc(db, 'gallery', galleryId));
+      fetchAllData();
+      console.log('Gallery item deleted successfully');
+    } catch (error) {
+      console.error('Failed to delete gallery item:', error);
+      alert('গ্যালারি আইটেম মুছে ফেলতে ব্যর্থ হয়েছে');
+    }
+  };
+
+  // Edit functions
+  const handleEditMember = (member: Member) => {
+    setEditingMember(member);
+    setShowAddMemberForm(true);
+  };
+
+  const handleEditEvent = (event: Event) => {
+    setEditingEvent(event);
+    setShowAddEventForm(true);
+  };
+
+  const handleEditActivity = (activity: ActivityType) => {
+    setEditingActivity(activity);
+    setShowAddActivityForm(true);
+  };
+
+  const handleEditGallery = (gallery: GalleryItem) => {
+    setEditingGallery(gallery);
+    setShowAddGalleryForm(true);
   };
 
   const addGalleryItem = async (galleryData: Omit<GalleryItem, 'id' | 'created_at' | 'uploaded_by_user_id'>) => {
@@ -309,15 +483,28 @@ export default function AdminPanel() {
         }
       });
       
-      const docRef = await addDoc(collection(db, 'gallery'), newGalleryData);
-      console.log('Gallery item added with ID: ', docRef.id);
+      if (editingGallery) {
+        // Update existing gallery item
+        const galleryRef = doc(db, 'gallery', editingGallery.id);
+        await updateDoc(galleryRef, {
+          ...galleryData,
+          updated_at: new Date().toISOString()
+        });
+        console.log('Gallery item updated with ID: ', editingGallery.id);
+        setEditingGallery(null);
+      } else {
+        // Add new gallery item
+        const docRef = await addDoc(collection(db, 'gallery'), newGalleryData);
+        console.log('Gallery item added with ID: ', docRef.id);
+      }
+      
       fetchAllData(); // Refresh data
       setShowAddGalleryForm(false);
     } catch (error: any) {
-      console.error('Error adding gallery item: ', error);
+      console.error('Error adding/updating gallery item: ', error);
       const message = (error && (error.code === 'permission-denied' || /insufficient permissions/i.test(error.message)))
         ? 'আপনার এই কাজটি করার অনুমতি নেই। অনুগ্রহ করে Firebase Firestore Rules আপডেট করুন যাতে admin ইমেইল থেকে gallery তে write করা যায়।'
-        : (error?.message || 'গ্যালারি আইটেম যোগ করতে ব্যর্থ হয়েছে');
+        : (error?.message || 'গ্যালারি আইটেম যোগ/আপডেট করতে ব্যর্থ হয়েছে');
       alert(message);
     }
   };
@@ -367,6 +554,7 @@ export default function AdminPanel() {
         {[
           { key: 'overview', name: 'ওভারভিউ', icon: Eye },
           { key: 'members', name: 'সদস্য ব্যবস্থাপনা', icon: Users },
+          { key: 'applications', name: 'আবেদন ব্যবস্থাপনা', icon: FileText },
           { key: 'events', name: 'ইভেন্ট ব্যবস্থাপনা', icon: Calendar },
           { key: 'activities', name: 'কার্যক্রম ব্যবস্থাপনা', icon: Activity },
           { key: 'gallery', name: 'গ্যালারি ব্যবস্থাপনা', icon: Settings },
@@ -421,6 +609,14 @@ export default function AdminPanel() {
               ফিচার্ড: {galleryItems.filter(g => g.is_featured).length}
             </p>
           </div>
+          <div className="bg-slate-800/50 rounded-xl p-6 border border-emerald-800/30 text-center">
+            <FileText className="w-12 h-12 text-pink-300 mx-auto mb-3" />
+            <h3 className="text-lg font-semibold text-emerald-100 mb-1">মোট আবেদন</h3>
+            <p className="text-3xl font-bold text-pink-300">{applications.length}</p>
+            <p className="text-sm text-emerald-200/70 mt-2">
+              অপেক্ষমাণ: {applications.filter(a => a.status === 'pending').length}
+            </p>
+          </div>
         </div>
       )}
 
@@ -463,26 +659,18 @@ export default function AdminPanel() {
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => toggleMemberAdmin(member.id, member.is_admin)}
-                      className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                        member.is_admin 
-                          ? 'bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 border border-yellow-500/30'
-                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600 border border-slate-600'
-                      }`}
+                    <button 
+                      onClick={() => handleEditMember(member)}
+                      className="p-2 bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition-colors"
                     >
-                      {member.is_admin ? 'অ্যাডমিন' : 'অ্যাডমিন করুন'}
+                      <Edit2 className="w-4 h-4" />
                     </button>
                     
-                    <button
-                      onClick={() => toggleMemberActive(member.id, member.is_active)}
-                      className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                        member.is_active 
-                          ? 'bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30'
-                          : 'bg-green-500/20 text-green-300 hover:bg-green-500/30 border border-green-500/30'
-                      }`}
+                    <button 
+                      onClick={() => handleDeleteMember(member.id)}
+                      className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors"
                     >
-                      {member.is_active ? 'নিষ্ক্রিয়' : 'সক্রিয়'}
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -494,6 +682,99 @@ export default function AdminPanel() {
             ))}
           </div>
 
+        </div>
+      )}
+
+      {activeTab === 'applications' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold text-emerald-100">আবেদন ব্যবস্থাপনা</h2>
+            <div className="flex items-center space-x-4">
+              <span className="text-sm text-emerald-200/70">
+                মোট আবেদন: {applications.length} | অপেক্ষমাণ: {applications.filter(a => a.status === 'pending').length}
+              </span>
+            </div>
+          </div>
+          
+          <div className="space-y-3">
+            {applications.map((application) => (
+              <div key={application.id} className="bg-slate-800/50 rounded-xl p-6 border border-emerald-800/30">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <h3 className="text-lg font-semibold text-emerald-100">{application.name}</h3>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        application.status === 'pending' 
+                          ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+                          : application.status === 'approved'
+                          ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                          : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                      }`}>
+                        {application.status === 'pending' ? 'অপেক্ষমাণ' : 
+                         application.status === 'approved' ? 'অনুমোদিত' : 'প্রত্যাখ্যান'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-emerald-200/70">ইমেইল: <span className="text-emerald-100">{application.email}</span></p>
+                        <p className="text-emerald-200/70">ফোন: <span className="text-emerald-100">{application.phone}</span></p>
+                      </div>
+                      <div>
+                        <p className="text-emerald-200/70">ঠিকানা: <span className="text-emerald-100">{application.address}</span></p>
+                        <p className="text-emerald-200/70">আবেদনের তারিখ: <span className="text-emerald-100">
+                          {new Date(application.applied_at).toLocaleDateString('bn-BD')}
+                        </span></p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="space-y-3 mb-4">
+                  <div>
+                    <h4 className="text-sm font-medium text-emerald-200 mb-1">সদস্য হওয়ার কারণ:</h4>
+                    <p className="text-emerald-100 text-sm bg-slate-700/50 p-3 rounded-lg">{application.reason}</p>
+                  </div>
+                  {application.experience && (
+                    <div>
+                      <h4 className="text-sm font-medium text-emerald-200 mb-1">অভিজ্ঞতা:</h4>
+                      <p className="text-emerald-100 text-sm bg-slate-700/50 p-3 rounded-lg">{application.experience}</p>
+                    </div>
+                  )}
+                </div>
+                
+                {application.status === 'pending' && (
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={() => handleApplicationStatus(application.id, 'approved')}
+                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      অনুমোদন করুন
+                    </button>
+                    <button
+                      onClick={() => handleApplicationStatus(application.id, 'rejected')}
+                      className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      প্রত্যাখ্যান করুন
+                    </button>
+                  </div>
+                )}
+                
+                {application.reviewed_at && (
+                  <div className="mt-3 text-xs text-emerald-200/60">
+                    পর্যালোচনা: {new Date(application.reviewed_at).toLocaleDateString('bn-BD')} 
+                    {application.reviewed_by && ` - ${application.reviewed_by}`}
+                  </div>
+                )}
+              </div>
+            ))}
+            
+            {applications.length === 0 && (
+              <div className="text-center py-8">
+                <FileText className="w-16 h-16 text-emerald-300/50 mx-auto mb-4" />
+                <p className="text-emerald-200/70">কোন আবেদন পাওয়া যায়নি</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -525,10 +806,16 @@ export default function AdminPanel() {
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <button className="p-2 bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition-colors">
+                    <button 
+                      onClick={() => handleEditEvent(event)}
+                      className="p-2 bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition-colors"
+                    >
                       <Edit2 className="w-4 h-4" />
                     </button>
-                    <button className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors">
+                    <button 
+                      onClick={() => handleDeleteEvent(event.id)}
+                      className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors"
+                    >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -591,10 +878,16 @@ export default function AdminPanel() {
                       {activity.status === 'completed' ? 'সম্পন্ন' : 
                        activity.status === 'in_progress' ? 'চলমান' : 'পরিকল্পিত'}
                     </span>
-                    <button className="p-2 bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition-colors">
+                    <button 
+                      onClick={() => handleEditActivity(activity)}
+                      className="p-2 bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition-colors"
+                    >
                       <Edit2 className="w-4 h-4" />
                     </button>
-                    <button className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors">
+                    <button 
+                      onClick={() => handleDeleteActivity(activity.id)}
+                      className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors"
+                    >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -644,10 +937,16 @@ export default function AdminPanel() {
                       {item.is_featured ? 'ফিচার্ড' : 'সাধারণ'}
                     </span>
                     <div className="flex items-center space-x-2">
-                      <button className="p-2 bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition-colors">
+                      <button 
+                        onClick={() => handleEditGallery(item)}
+                        className="p-2 bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition-colors"
+                      >
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors">
+                      <button 
+                        onClick={() => handleDeleteGallery(item.id)}
+                        className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors"
+                      >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -661,12 +960,29 @@ export default function AdminPanel() {
 
       {/* Add Member Modal */}
       {showAddMemberForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl p-6 border border-emerald-800/30 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-hidden"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowAddMemberForm(false);
+              setEditingMember(null);
+            }
+          }}
+        >
+          <div 
+            className="bg-slate-800 rounded-xl p-6 border border-emerald-800/30 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-emerald-100">নতুন সদস্য যোগ করুন</h3>
+              <h3 className="text-lg font-semibold text-emerald-100">
+                {editingMember ? 'সদস্য সম্পাদনা করুন' : 'নতুন সদস্য যোগ করুন'}
+              </h3>
               <button
-                onClick={() => setShowAddMemberForm(false)}
+                onClick={() => {
+                  setShowAddMemberForm(false);
+                  setEditingMember(null);
+                }}
                 className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5 text-emerald-300" />
@@ -679,10 +995,11 @@ export default function AdminPanel() {
                 user_id: formData.get('email') as string,
                 name: formData.get('name') as string,
                 email: formData.get('email') as string,
+                temp_password: formData.get('temp_password') as string || undefined,
                 phone: formData.get('phone') as string || undefined,
                 address: formData.get('address') as string || undefined,
                 is_admin: formData.get('is_admin') === 'true',
-                is_active: true,
+                is_active: formData.get('is_active') === 'true',
                 joined_date: new Date().toISOString().split('T')[0]
               });
             }} className="space-y-4">
@@ -693,6 +1010,7 @@ export default function AdminPanel() {
                     type="text"
                     name="name"
                     required
+                    defaultValue={editingMember?.name || ''}
                     className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                     placeholder="সদস্যের নাম"
                   />
@@ -703,8 +1021,19 @@ export default function AdminPanel() {
                     type="email"
                     name="email"
                     required
+                    defaultValue={editingMember?.email || ''}
                     className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                     placeholder="ইমেইল ঠিকানা"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-emerald-200 mb-2">অস্থায়ী পাসওয়ার্ড (ইমেইল/পাস লগইনের জন্য)</label>
+                  <input
+                    type="text"
+                    name="temp_password"
+                    defaultValue={editingMember?.temp_password || ''}
+                    className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
+                    placeholder="যেমন: Abcd@123"
                   />
                 </div>
                 <div>
@@ -712,6 +1041,7 @@ export default function AdminPanel() {
                   <input
                     type="tel"
                     name="phone"
+                    defaultValue={editingMember?.phone || ''}
                     className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                     placeholder="ফোন নম্বর"
                   />
@@ -721,20 +1051,33 @@ export default function AdminPanel() {
                   <input
                     type="text"
                     name="address"
+                    defaultValue={editingMember?.address || ''}
                     className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                     placeholder="ঠিকানা"
                   />
                 </div>
               </div>
-              <div>
+              <div className="space-y-3">
                 <label className="flex items-center space-x-2">
                   <input
                     type="checkbox"
                     name="is_admin"
                     value="true"
+                    defaultChecked={editingMember?.is_admin || false}
                     className="w-4 h-4 text-emerald-600 bg-slate-700 border-emerald-600/30 rounded focus:ring-emerald-500"
                   />
                   <span className="text-sm text-emerald-200">অ্যাডমিন হিসেবে যোগ করুন</span>
+                </label>
+                
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    name="is_active"
+                    value="true"
+                    defaultChecked={editingMember?.is_active !== false}
+                    className="w-4 h-4 text-emerald-600 bg-slate-700 border-emerald-600/30 rounded focus:ring-emerald-500"
+                  />
+                  <span className="text-sm text-emerald-200">সক্রিয় সদস্য</span>
                 </label>
               </div>
               <div className="flex space-x-3">
@@ -742,11 +1085,14 @@ export default function AdminPanel() {
                   type="submit"
                   className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white px-6 py-2 rounded-lg transition-all"
                 >
-                  যোগ করুন
+                  {editingMember ? 'আপডেট করুন' : 'যোগ করুন'}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowAddMemberForm(false)}
+                  onClick={() => {
+                    setShowAddMemberForm(false);
+                    setEditingMember(null);
+                  }}
                   className="bg-slate-600 hover:bg-slate-700 text-white px-6 py-2 rounded-lg transition-all"
                 >
                   বাতিল
@@ -759,12 +1105,29 @@ export default function AdminPanel() {
 
       {/* Add Event Modal */}
       {showAddEventForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl p-6 border border-emerald-800/30 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-hidden"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowAddEventForm(false);
+              setEditingEvent(null);
+            }
+          }}
+        >
+          <div 
+            className="bg-slate-800 rounded-xl p-6 border border-emerald-800/30 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-emerald-100">নতুন ইভেন্ট যোগ করুন</h3>
+              <h3 className="text-lg font-semibold text-emerald-100">
+                {editingEvent ? 'ইভেন্ট সম্পাদনা করুন' : 'নতুন ইভেন্ট যোগ করুন'}
+              </h3>
               <button
-                onClick={() => setShowAddEventForm(false)}
+                onClick={() => {
+                  setShowAddEventForm(false);
+                  setEditingEvent(null);
+                }}
                 className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5 text-emerald-300" />
@@ -789,6 +1152,7 @@ export default function AdminPanel() {
                   type="text"
                   name="title"
                   required
+                  defaultValue={editingEvent?.title || ''}
                   className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                   placeholder="ইভেন্টের নাম"
                 />
@@ -798,6 +1162,7 @@ export default function AdminPanel() {
                 <textarea
                   name="description"
                   rows={3}
+                  defaultValue={editingEvent?.description || ''}
                   className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                   placeholder="ইভেন্টের বিবরণ"
                 />
@@ -809,6 +1174,7 @@ export default function AdminPanel() {
                     type="date"
                     name="event_date"
                     required
+                    defaultValue={editingEvent?.event_date || ''}
                     className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -817,6 +1183,7 @@ export default function AdminPanel() {
                   <input
                     type="time"
                     name="event_time"
+                    defaultValue={editingEvent?.event_time || ''}
                     className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -826,6 +1193,7 @@ export default function AdminPanel() {
                 <input
                   type="text"
                   name="location"
+                  defaultValue={editingEvent?.location || ''}
                   className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                   placeholder="ইভেন্টের স্থান"
                 />
@@ -835,7 +1203,7 @@ export default function AdminPanel() {
                   type="submit"
                   className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white px-6 py-2 rounded-lg transition-all"
                 >
-                  যোগ করুন
+                  {editingMember ? 'আপডেট করুন' : 'যোগ করুন'}
                 </button>
                 <button
                   type="button"
@@ -852,12 +1220,29 @@ export default function AdminPanel() {
 
       {/* Add Activity Modal */}
       {showAddActivityForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl p-6 border border-emerald-800/30 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-hidden"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowAddActivityForm(false);
+              setEditingActivity(null);
+            }
+          }}
+        >
+          <div 
+            className="bg-slate-800 rounded-xl p-6 border border-emerald-800/30 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-emerald-100">নতুন কার্যক্রম যোগ করুন</h3>
+              <h3 className="text-lg font-semibold text-emerald-100">
+                {editingActivity ? 'কার্যক্রম সম্পাদনা করুন' : 'নতুন কার্যক্রম যোগ করুন'}
+              </h3>
               <button
-                onClick={() => setShowAddActivityForm(false)}
+                onClick={() => {
+                  setShowAddActivityForm(false);
+                  setEditingActivity(null);
+                }}
                 className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5 text-emerald-300" />
@@ -880,6 +1265,7 @@ export default function AdminPanel() {
                   type="text"
                   name="title"
                   required
+                  defaultValue={editingActivity?.title || ''}
                   className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                   placeholder="কার্যক্রমের নাম"
                 />
@@ -889,6 +1275,7 @@ export default function AdminPanel() {
                 <textarea
                   name="description"
                   rows={3}
+                  defaultValue={editingActivity?.description || ''}
                   className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                   placeholder="কার্যক্রমের বিবরণ"
                 />
@@ -899,6 +1286,7 @@ export default function AdminPanel() {
                   <select
                     name="activity_type"
                     required
+                    defaultValue={editingActivity?.activity_type || ''}
                     className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                   >
                     <option value="">নির্বাচন করুন</option>
@@ -914,6 +1302,7 @@ export default function AdminPanel() {
                   <input
                     type="date"
                     name="scheduled_date"
+                    defaultValue={editingActivity?.scheduled_date || ''}
                     className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -923,6 +1312,7 @@ export default function AdminPanel() {
                 <select
                   name="status"
                   required
+                  defaultValue={editingActivity?.status || ''}
                   className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                 >
                   <option value="planned">পরিকল্পিত</option>
@@ -935,7 +1325,7 @@ export default function AdminPanel() {
                   type="submit"
                   className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white px-6 py-2 rounded-lg transition-all"
                 >
-                  যোগ করুন
+                  {editingMember ? 'আপডেট করুন' : 'যোগ করুন'}
                 </button>
                 <button
                   type="button"
@@ -952,12 +1342,29 @@ export default function AdminPanel() {
 
       {/* Add Gallery Modal */}
       {showAddGalleryForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl p-6 border border-emerald-800/30 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-hidden"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowAddGalleryForm(false);
+              setEditingGallery(null);
+            }
+          }}
+        >
+          <div 
+            className="bg-slate-800 rounded-xl p-6 border border-emerald-800/30 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-emerald-100">নতুন ছবি যোগ করুন</h3>
+              <h3 className="text-lg font-semibold text-emerald-100">
+                {editingGallery ? 'গ্যালারি সম্পাদনা করুন' : 'নতুন ছবি যোগ করুন'}
+              </h3>
               <button
-                onClick={() => setShowAddGalleryForm(false)}
+                onClick={() => {
+                  setShowAddGalleryForm(false);
+                  setEditingGallery(null);
+                }}
                 className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5 text-emerald-300" />
@@ -1005,6 +1412,7 @@ export default function AdminPanel() {
                 <input
                   type="text"
                   name="title"
+                  defaultValue={editingGallery?.title || ''}
                   className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                   placeholder="ছবির শিরোনাম"
                 />
@@ -1014,6 +1422,7 @@ export default function AdminPanel() {
                 <textarea
                   name="description"
                   rows={3}
+                  defaultValue={editingGallery?.description || ''}
                   className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                   placeholder="ছবির বিবরণ"
                 />
@@ -1022,6 +1431,7 @@ export default function AdminPanel() {
                 <label className="block text-sm font-medium text-emerald-200 mb-2">ইভেন্ট (ঐচ্ছিক)</label>
                 <select
                   name="event_id"
+                  defaultValue={editingGallery?.event_id || ''}
                   className="w-full px-3 py-2 bg-slate-700 border border-emerald-600/30 rounded-lg text-emerald-100 focus:outline-none focus:border-emerald-500"
                 >
                   <option value="">কোনো ইভেন্টের সাথে যুক্ত নয়</option>
@@ -1036,6 +1446,7 @@ export default function AdminPanel() {
                     type="checkbox"
                     name="is_featured"
                     value="true"
+                    defaultChecked={editingGallery?.is_featured || false}
                     className="w-4 h-4 text-emerald-600 bg-slate-700 border-emerald-600/30 rounded focus:ring-emerald-500"
                   />
                   <span className="text-sm text-emerald-200">ফিচার্ড ছবি হিসেবে চিহ্নিত করুন</span>
@@ -1046,7 +1457,7 @@ export default function AdminPanel() {
                   type="submit"
                   className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white px-6 py-2 rounded-lg transition-all"
                 >
-                  যোগ করুন
+                  {editingMember ? 'আপডেট করুন' : 'যোগ করুন'}
                 </button>
                 <button
                   type="button"

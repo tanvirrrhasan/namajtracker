@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useFirebaseAuth } from "@/react-app/context/FirebaseAuthContext";
 import { db } from "@/react-app/lib/firebase";
 import { collection, getDocs, orderBy, limit, query } from "firebase/firestore";
-import { Calendar, Users, Activity, Building, BookOpen, Heart } from "lucide-react";
+import { Calendar, Users, Activity, Building, BookOpen, Heart, FileText, ArrowRight } from "lucide-react";
 import { Link } from "react-router";
 
 interface Event {
@@ -78,14 +78,67 @@ export default function HomePage() {
         {/* Welcome Card */}
         <div className="bg-gradient-to-r from-emerald-800/40 to-emerald-700/40 rounded-2xl p-6 border border-emerald-700/30 text-center">
           <Building className="w-16 h-16 text-emerald-300 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-emerald-100 mb-2">মসজিদ কমিউনিটি</h1>
-          <p className="text-emerald-200/80 mb-4">স্বাগতম! নিচে সাম্প্রতিক ইভেন্ট ও ফিচার্ড গ্যালারি দেখুন।</p>
-          <button
-            onClick={signInWithGoogle}
-            className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white px-6 py-2 rounded-xl font-medium transition-all duration-200 shadow-lg shadow-emerald-800/30"
-          >
-            গুগল দিয়ে লগইন করুন
-          </button>
+          <h1 className="text-2xl font-bold text-emerald-100 mb-2">সিরাতুল সাবিকুন</h1>
+          <p className="text-emerald-200/80 mb-6">স্বাগতম! আমাদের কমিউনিটির সদস্য হয়ে নামাজের হিসাব রাখুন এবং ইভেন্টে অংশগ্রহণ করুন।</p>
+          
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={signInWithGoogle}
+              className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white px-6 py-3 rounded-xl font-medium transition-all duration-200 shadow-lg shadow-emerald-800/30 flex items-center justify-center space-x-2"
+            >
+              <span>গুগল দিয়ে লগইন করুন</span>
+            </button>
+            <Link
+              to="/application"
+              className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-xl font-medium transition-all duration-200 shadow-lg shadow-blue-800/30 flex items-center justify-center space-x-2"
+            >
+              <FileText className="w-4 h-4" />
+              <span>সদস্য হওয়ার আবেদন</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+
+        {/* Registration Info Card */}
+        <div className="bg-gradient-to-r from-blue-800/40 to-blue-700/40 rounded-2xl p-6 border border-blue-700/30">
+          <div className="flex items-start space-x-4">
+            <div className="bg-blue-600/20 p-3 rounded-xl">
+              <FileText className="w-8 h-8 text-blue-300" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-blue-100 mb-2">সদস্য হতে চান?</h3>
+              <p className="text-blue-200/80 mb-4">
+                আমাদের সিরাতুল সাবিকুন কমিউনিটির সদস্য হয়ে নামাজের হিসাব রাখুন, ইভেন্টে অংশগ্রহণ করুন এবং ধর্মীয় কার্যক্রমে অংশ নিন।
+              </p>
+              <div className="space-y-2 text-sm text-blue-200/70">
+                <div className="flex items-center space-x-2">
+                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
+                  <span>নামাজের দৈনিক হিসাব রাখা</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
+                  <span>ইভেন্ট ও কার্যক্রমে অংশগ্রহণ</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
+                  <span>গ্যালারি ও ছবি দেখা</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
+                  <span>কমিউনিটি সদস্যদের সাথে যোগাযোগ</span>
+                </div>
+              </div>
+              <div className="mt-4">
+                <Link
+                  to="/application"
+                  className="inline-flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  <span>এখনই আবেদন করুন</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Recent Events (public) */}

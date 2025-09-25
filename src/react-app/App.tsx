@@ -6,6 +6,7 @@ import ActivitiesPage from "@/react-app/pages/Activities";
 import ProfilePage from "@/react-app/pages/Profile";
 import AdminPanel from "@/react-app/pages/AdminPanel";
 import GalleryPage from "@/react-app/pages/Gallery";
+import ApplicationPage from "@/react-app/pages/Application";
 import AuthCallbackPage from "@/react-app/pages/AuthCallback";
 import Layout from "@/react-app/components/Layout";
 
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="gallery" element={<GalleryPage />} />
             <Route path="profile" element={<ProfilePage />} />
             <Route path="admin" element={<AdminPanel />} />
+            <Route path="application" element={<ApplicationPage />} />
           </Route>
         </Routes>
       </Router>

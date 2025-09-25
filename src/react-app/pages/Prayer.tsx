@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useFirebaseAuth } from "@/react-app/context/FirebaseAuthContext";
-import { Check, X, Sun, Sunrise, Sunset, Moon, Clock, Lock } from "lucide-react";
+import { Check, X, Sun, Sunrise, Sunset, Moon, Clock, Lock, ChevronLeft, ChevronRight } from "lucide-react";
 import { db } from "@/react-app/lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, doc, query, where } from "firebase/firestore";
 
@@ -53,6 +53,7 @@ export default function PrayerPage() {
   const [currentMember, setCurrentMember] = useState<Member | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   
   const today = new Date().toISOString().split('T')[0];
 
@@ -60,7 +61,7 @@ export default function PrayerPage() {
     if (user) {
       fetchData();
     }
-  }, [user]);
+  }, [user, selectedDate]);
 
   const fetchData = async () => {
     try {
@@ -100,10 +101,9 @@ export default function PrayerPage() {
       
       setCurrentMember(userMember || null);
 
-      // Fetch today's prayer records
+      // Fetch prayer records for selected date
       const prayersCol = collection(db, "prayer_records");
-      const today = new Date().toISOString().split('T')[0];
-      const prayersQuery = query(prayersCol, where("prayer_date", "==", today));
+      const prayersQuery = query(prayersCol, where("prayer_date", "==", selectedDate));
       const prayersSnapshot = await getDocs(prayersQuery);
       const prayerRecords: PrayerRecord[] = prayersSnapshot.docs.map(doc => ({
         id: doc.id,
@@ -125,10 +125,31 @@ export default function PrayerPage() {
     setUpdating(updateKey);
 
     try {
-      // Find existing prayer record for today
+      // Find existing prayer record for selected date
       const existingRecord = prayerRecords.find(record => 
-        record.member_id === memberId && record.prayer_date === today
+        record.member_id === memberId && record.prayer_date === selectedDate
       );
+
+      const isSelfUpdate = currentMember?.id === memberId;
+      const member = members.find(m => m.id === memberId);
+
+      // Create history record for every update
+      const historyRecord = {
+        member_id: memberId,
+        member_name: member?.name || 'Unknown',
+        prayer_type: prayerType,
+        prayer_name: prayerTimes.find(p => p.key === prayerType)?.name || prayerType,
+        completed: completed,
+        updated_by_user_id: user.id,
+        updated_by_user_name: currentMember?.name || 'Unknown',
+        prayer_date: selectedDate,
+        is_self_update: isSelfUpdate,
+        timestamp: new Date().toISOString(),
+        created_at: new Date().toISOString()
+      };
+
+      // Store history record
+      await addDoc(collection(db, "prayer_history"), historyRecord);
 
       if (existingRecord) {
         // Update existing record
@@ -136,7 +157,8 @@ export default function PrayerPage() {
         await updateDoc(recordRef, {
           [prayerType]: completed,
           [`${prayerType}_updated`]: true,
-          [`${prayerType}_locked`]: true,
+          // Lock only if self-updated
+          [`${prayerType}_locked`]: isSelfUpdate,
           updated_by_user_id: user.id,
           updated_at: new Date().toISOString()
         });
@@ -144,7 +166,7 @@ export default function PrayerPage() {
         // Create new record
         const newRecord: any = {
           member_id: memberId,
-          prayer_date: today,
+          prayer_date: selectedDate,
           fajr: false,
           dhuhr: false,
           asr: false,
@@ -167,7 +189,8 @@ export default function PrayerPage() {
         
         newRecord[prayerType] = completed;
         newRecord[`${prayerType}_updated`] = true;
-        newRecord[`${prayerType}_locked`] = true;
+        // Lock only if self-updated
+        newRecord[`${prayerType}_locked`] = isSelfUpdate;
         
         await addDoc(collection(db, "prayer_records"), newRecord);
       }
@@ -206,6 +229,41 @@ export default function PrayerPage() {
   const handleSelfPrayerClick = (prayerType: PrayerKey, completed: boolean) => {
     if (!currentMember) return;
     updatePrayer(currentMember.id, prayerType, completed);
+  };
+
+  const goToPreviousDay = () => {
+    const currentDate = new Date(selectedDate);
+    const previousDate = new Date(currentDate);
+    previousDate.setDate(currentDate.getDate() - 1);
+    const newDate = previousDate.toISOString().split('T')[0];
+    setSelectedDate(newDate);
+  };
+
+  const goToNextDay = () => {
+    const currentDate = new Date(selectedDate);
+    const nextDate = new Date(currentDate);
+    nextDate.setDate(currentDate.getDate() + 1);
+    const newDate = nextDate.toISOString().split('T')[0];
+    
+    // Don't allow going to future dates
+    if (newDate <= today) {
+      setSelectedDate(newDate);
+    }
+  };
+
+  const isPreviousDayDisabled = () => {
+    // Allow going back to any past date
+    return false;
+  };
+
+  const isNextDayDisabled = () => {
+    const currentDate = new Date(selectedDate);
+    const nextDate = new Date(currentDate);
+    nextDate.setDate(currentDate.getDate() + 1);
+    const nextDateString = nextDate.toISOString().split('T')[0];
+    
+    // Disable if next day is in the future
+    return nextDateString > today;
   };
 
   if (!user) {
@@ -248,22 +306,50 @@ export default function PrayerPage() {
     <div className="p-4 space-y-6">
       {/* Header */}
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-emerald-100 mb-2">
-          আজকের নামাজের হিসাব
+        <h1 className="text-xl font-bold text-emerald-100 mb-1">
+          নামাজের হিসাব
         </h1>
-        <p className="text-emerald-200/70">
-          {new Date().toLocaleDateString('bn-BD', { 
-            weekday: 'long',
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
-          })}
-        </p>
+        
+        {/* Date Navigation */}
+        <div className="flex items-center justify-center space-x-4 mb-2">
+          <button
+            onClick={goToPreviousDay}
+            disabled={isPreviousDayDisabled()}
+            className={`p-1 rounded transition-colors ${
+              isPreviousDayDisabled() 
+                ? 'bg-slate-700 text-slate-500 cursor-not-allowed' 
+                : 'bg-emerald-800/40 hover:bg-emerald-700/40 text-emerald-300'
+            }`}
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          
+          <div className="text-sm text-emerald-200/70">
+            {new Date(selectedDate).toLocaleDateString('bn-BD', { 
+              weekday: 'long',
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })}
+          </div>
+          
+          <button
+            onClick={goToNextDay}
+            disabled={isNextDayDisabled()}
+            className={`p-1 rounded transition-colors ${
+              isNextDayDisabled() 
+                ? 'bg-slate-700 text-slate-500 cursor-not-allowed' 
+                : 'bg-emerald-800/40 hover:bg-emerald-700/40 text-emerald-300'
+            }`}
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Current User's Prayer Status */}
       {currentMember && (
-        <div className="bg-gradient-to-br from-emerald-800/40 to-emerald-700/40 rounded-2xl p-6 border border-emerald-600/40">
+        <div className="bg-gradient-to-br from-emerald-800/40 to-emerald-700/40 rounded-2xl p-3 sm:p-6 border border-emerald-600/40">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-xl font-bold text-emerald-100">{currentMember.name}</h3>
@@ -273,13 +359,15 @@ export default function PrayerPage() {
               {(() => {
                 const record = getMemberPrayerRecord(currentMember.id);
                 const completedCount = record ? 
-                  Object.values(record).filter((v, i) => i > 6 && i < 12 && v).length : 0;
+                  // Count only the five prayer booleans
+                  (Number(record.fajr) + Number(record.dhuhr) + Number(record.asr) + Number(record.maghrib) + Number(record.isha))
+                  : 0;
                 return `${completedCount}/৫`;
               })()}
             </div>
           </div>
           
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-5 gap-2 sm:gap-3">
             {prayerTimes.map((prayer) => {
               const record = getMemberPrayerRecord(currentMember.id);
               const isCompleted = record ? record[prayer.key as keyof PrayerRecord] as boolean : false;
@@ -297,13 +385,13 @@ export default function PrayerPage() {
               // If this specific prayer has been updated and is self-locked, show status with edit button
               if (hasThisPrayerUpdate && isSelfLocked) {
                 return (
-                  <div key={prayer.key} className={`relative p-3 rounded-xl transition-all duration-200 min-h-[80px] ${
+                  <div key={prayer.key} className={`relative p-2 sm:p-3 rounded-xl transition-all duration-200 min-h-[80px] ${
                     isCompleted 
                       ? 'bg-green-600 shadow-lg' 
                       : 'bg-red-600 shadow-lg'
                   } ${isUpdating ? 'opacity-50' : ''}`}>
-                    <div className="text-center pt-6">
-                      <div className="text-sm font-medium text-white">
+                    <div className="text-center absolute bottom-2 left-0 right-0">
+                      <div className="text-xs sm:text-sm font-medium text-white">
                         {prayer.name}
                       </div>
                       <div className="text-xs text-white/70">
@@ -336,13 +424,13 @@ export default function PrayerPage() {
               // If this specific prayer has been updated by others (but not self-locked), show colorful status with edit buttons  
               if (hasThisPrayerUpdate) {
                 return (
-                  <div key={prayer.key} className={`relative p-3 rounded-xl transition-all duration-200 min-h-[80px] ${
+                  <div key={prayer.key} className={`relative p-2 sm:p-3 rounded-xl transition-all duration-200 min-h-[80px] ${
                     isCompleted 
-                      ? 'bg-green-600 shadow-lg' 
-                      : 'bg-red-600 shadow-lg'
+                      ? 'bg-green-800 shadow-lg' 
+                      : 'bg-red-800 shadow-lg'
                   } ${isUpdating ? 'opacity-50' : ''}`}>
-                    <div className="text-center pt-6">
-                      <div className="text-sm font-medium text-white">
+                    <div className="text-center absolute bottom-2 left-0 right-0">
+                      <div className="text-xs sm:text-sm font-medium text-white">
                         {prayer.name}
                       </div>
                       <div className="text-xs text-white/70">
@@ -350,18 +438,18 @@ export default function PrayerPage() {
                       </div>
                     </div>
                     
-                    <div className="absolute top-1 left-1/2 transform -translate-x-1/2 flex gap-1">
+                    <div className="absolute top-3 left-1/2 transform -translate-x-1/2 flex gap-1">
                       <button
                         onClick={() => handleSelfPrayerClick(prayer.key, false)}
                         disabled={isUpdating}
-                        className="w-6 h-6 bg-red-500 hover:bg-red-600 rounded flex items-center justify-center text-white text-xs transition-colors"
+                        className="w-6 h-6 bg-red-600 hover:bg-red-700 rounded flex items-center justify-center text-white text-xs transition-colors shadow-lg"
                       >
                         <X className="w-3 h-3 text-white" />
                       </button>
                       <button
                         onClick={() => handleSelfPrayerClick(prayer.key, true)}
                         disabled={isUpdating}
-                        className="w-6 h-6 bg-green-500 hover:bg-green-600 rounded flex items-center justify-center text-white text-xs transition-colors"
+                        className="w-6 h-6 bg-green-600 hover:bg-green-700 rounded flex items-center justify-center text-white text-xs transition-colors shadow-lg"
                       >
                         <Check className="w-3 h-3 text-white" />
                       </button>
@@ -379,7 +467,7 @@ export default function PrayerPage() {
               // Default state - show black box with tick/cross buttons for direct confirmation
               return (
                 <div key={prayer.key} className="relative p-3 rounded-xl bg-black border border-slate-600 transition-all duration-200 min-h-[80px]">
-                  <div className="absolute top-1 left-1/2 transform -translate-x-1/2 flex gap-1">
+                  <div className="absolute top-3 left-1/2 transform -translate-x-1/2 flex gap-1">
                     <button
                       onClick={() => handleSelfPrayerClick(prayer.key, false)}
                       disabled={isUpdating}
@@ -395,8 +483,8 @@ export default function PrayerPage() {
                       <Check className="w-3 h-3 text-white" />
                     </button>
                   </div>
-                  <div className="text-center pt-6">
-                    <div className="text-sm font-medium text-white">{prayer.name}</div>
+                  <div className="text-center absolute bottom-2 left-0 right-0">
+                    <div className="text-xs sm:text-sm font-medium text-white">{prayer.name}</div>
                     <div className="text-xs text-slate-400">{prayer.name_en}</div>
                   </div>
                   
@@ -427,7 +515,7 @@ export default function PrayerPage() {
                     <h4 className="font-medium text-emerald-100">{member.name}</h4>
                   </div>
                   <div className="text-xs text-emerald-200/70">
-                    {record ? `${Object.values(record).filter((v, i) => i > 6 && i < 12 && v).length}/৫` : '০/৫'}
+                    {record ? `${(Number(record.fajr) + Number(record.dhuhr) + Number(record.asr) + Number(record.maghrib) + Number(record.isha))}/৫` : '০/৫'}
                   </div>
                 </div>
                 
